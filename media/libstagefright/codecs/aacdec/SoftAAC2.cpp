@@ -876,7 +876,7 @@ void SoftAAC2::onQueueFilled(OMX_U32 /* portIndex */) {
                         *nextTimeStamp += mStreamInfo->aacSamplesPerFrame *
                                 1000000ll / mStreamInfo->sampleRate;
                         ALOGV("adjusted nextTimeStamp/size to %lld/%d",
-                                (long long) *nextTimeStamp, *currentBufLeft);
+                                *nextTimeStamp, *currentBufLeft);
                     } else {
                         // move to next timestamp in list
                         if (mBufferTimestamps.size() > 0) {
@@ -885,7 +885,7 @@ void SoftAAC2::onQueueFilled(OMX_U32 /* portIndex */) {
                             mBufferSizes.removeAt(0);
                             currentBufLeft = &mBufferSizes.editItemAt(0);
                             ALOGV("moved to next time/size: %lld/%d",
-                                    (long long) *nextTimeStamp, *currentBufLeft);
+                                    *nextTimeStamp, *currentBufLeft);
                         }
                         // try to limit output buffer size to match input buffers
                         // (e.g when an input buffer contained 4 "sub" frames, output
@@ -929,22 +929,33 @@ void SoftAAC2::onQueueFilled(OMX_U32 /* portIndex */) {
         }
 
         if (mEndOfInput) {
-            int ringBufAvail = outputDelayRingBufferSamplesAvailable();
-            if (!outQueue.empty()
-                    && ringBufAvail < mStreamInfo->frameSize * mStreamInfo->numChannels) {
+            if (outputDelayRingBufferSamplesAvailable() > 0
+                    && outputDelayRingBufferSamplesAvailable()
+                            < mStreamInfo->frameSize * mStreamInfo->numChannels) {
+                ALOGE("not a complete frame of samples available");
+                mSignalledError = true;
+                notify(OMX_EventError, OMX_ErrorUndefined, 0, NULL);
+                return;
+            }
+
+            if (mEndOfInput && !outQueue.empty() && outputDelayRingBufferSamplesAvailable() == 0) {
                 if (!mEndOfOutput) {
-                    // send partial or empty block signaling EOS
+                    // send empty block signaling EOS
                     mEndOfOutput = true;
                     BufferInfo *outInfo = *outQueue.begin();
                     OMX_BUFFERHEADERTYPE *outHeader = outInfo->mHeader;
 
+                    if (outHeader->nOffset != 0) {
+                        ALOGE("outHeader->nOffset != 0 is not handled");
+                        mSignalledError = true;
+                        notify(OMX_EventError, OMX_ErrorUndefined, 0, NULL);
+                        return;
+                    }
+
                     INT_PCM *outBuffer = reinterpret_cast<INT_PCM *>(outHeader->pBuffer
                             + outHeader->nOffset);
-                    int32_t ns = outputDelayRingBufferGetSamples(outBuffer, ringBufAvail);
-                    if (ns < 0) {
-                        ns = 0;
-                    }
-                    outHeader->nFilledLen = ns;
+                    int32_t ns = 0;
+                    outHeader->nFilledLen = 0;
                     outHeader->nFlags = OMX_BUFFERFLAG_EOS;
 
                     outHeader->nTimeStamp = mBufferTimestamps.itemAt(0);
@@ -983,7 +994,7 @@ void SoftAAC2::onPortFlushCompleted(OMX_U32 portIndex) {
             }
             int32_t ns = outputDelayRingBufferGetSamples(0, avail);
             if (ns != avail) {
-                ALOGW("not a complete frame of samples available");
+                ALOGE("not a complete frame of samples available");
                 break;
             }
             mOutputBufferCount++;
@@ -993,6 +1004,8 @@ void SoftAAC2::onPortFlushCompleted(OMX_U32 portIndex) {
 }
 
 void SoftAAC2::drainDecoder() {
+    int32_t outputDelay = mStreamInfo->outputDelay * mStreamInfo->numChannels;
+
     // flush decoder until outputDelay is compensated
     while (mOutputDelayCompensated > 0) {
         // a buffer big enough for MAX_CHANNEL_COUNT channels of decoded HE-AAC

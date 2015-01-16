@@ -159,6 +159,7 @@ void MPEG2TSExtractor::init() {
     int numPacketsParsed = 0;
 
     while (feedMore() == OK) {
+        ATSParser::SourceType type;
         if (haveAudio && haveVideo) {
             break;
         }

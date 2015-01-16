@@ -951,9 +951,7 @@ status_t ACodec::submitOutputMetaDataBuffer() {
 void ACodec::setNativeWindowColorFormat(OMX_COLOR_FORMATTYPE &eNativeColorFormat)
 {
     // In case of Samsung decoders, we set proper native color format for the Native Window
-    if (!strcasecmp(mComponentName.c_str(), "OMX.SEC.AVC.Decoder")
-        || !strcasecmp(mComponentName.c_str(), "OMX.SEC.FP.AVC.Decoder")
-        || !strcasecmp(mComponentName.c_str(), "OMX.Exynos.AVC.Decoder")) {
+    if(!strncasecmp(mComponentName.c_str(), "OMX.SEC.", 8)){
         switch (eNativeColorFormat) {
             case OMX_COLOR_FormatYUV420SemiPlanar:
                 eNativeColorFormat = (OMX_COLOR_FORMATTYPE)HAL_PIXEL_FORMAT_YCbCr_420_SP;
@@ -986,6 +984,7 @@ status_t ACodec::cancelBufferToNativeWindow(BufferInfo *info) {
 
 ACodec::BufferInfo *ACodec::dequeueBufferFromNativeWindow() {
     ANativeWindowBuffer *buf;
+    int fenceFd = -1;
     CHECK(mNativeWindow.get() != NULL);
 
     if (mTunneled) {
@@ -3191,6 +3190,7 @@ bool ACodec::allYourBuffersAreBelongToUs() {
 }
 
 void ACodec::deferMessage(const sp<AMessage> &msg) {
+    bool wasEmptyBefore = mDeferredQueue.empty();
     mDeferredQueue.push_back(msg);
 }
 
@@ -3859,6 +3859,7 @@ status_t ACodec::pushBlankBuffersToNativeWindow() {
     // on the screen and then been replaced, so an previous video frames are
     // guaranteed NOT to be currently displayed.
     for (int i = 0; i < numBufs + 1; i++) {
+        int fenceFd = -1;
         err = native_window_dequeue_buffer_and_wait(mNativeWindow.get(), &anb);
         if (err != NO_ERROR) {
             ALOGE("error pushing blank frames: dequeueBuffer failed: %s (%d)",

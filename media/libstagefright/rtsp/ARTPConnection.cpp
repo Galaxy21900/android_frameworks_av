@@ -696,10 +696,11 @@ void ARTPConnection::onInjectPacket(const sp<AMessage> &msg) {
 
     StreamInfo *s = &*it;
 
+    status_t err;
     if (it->mRTPSocket == index) {
-        parseRTP(s, buffer);
+        err = parseRTP(s, buffer);
     } else {
-        parseRTCP(s, buffer);
+        err = parseRTCP(s, buffer);
     }
 }
 
